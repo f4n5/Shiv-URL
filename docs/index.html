@@ -329,15 +329,17 @@
     <div class="card">
       <div class="instance-bar">
         <select id="instance" title="Cobalt API instance">
-          <option value="https://api.cobalt.tools">api.cobalt.tools (official)</option>
-          <option value="https://bergung-api.hoffnungfuerdiezukunft.net">bergung (community)</option>
+          <option value="https://rue-cobalt.xenon.zone">xenon (no captcha) ★</option>
+          <option value="https://cobaltapi.cjs.nz">cjs.nz (no captcha) ★</option>
           <option value="https://cobalt-alpha.wolfy.love">canine alpha</option>
           <option value="https://apicobalt.girlskissing.top">girlskissing</option>
           <option value="https://nuko-c.meowing.de">meowing nuko</option>
           <option value="https://cobalt-api.lamps-dev.dev">lamps-dev</option>
+          <option value="https://bergung-api.hoffnungfuerdiezukunft.net">bergung</option>
+          <option value="https://api.cobalt.tools">api.cobalt.tools (official)</option>
           <option value="custom">Custom instance…</option>
         </select>
-        <span class="chip" id="instChip">instance</span>
+        <span class="chip live" id="instChip">open</span>
       </div>
       <div id="customRow" style="display:none; margin-bottom:0.75rem">
         <input id="customApi" type="url" placeholder="https://your-cobalt-api.example" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.65rem 0.75rem;color:var(--text);font-size:0.9rem" />
@@ -417,7 +419,8 @@
         <li>This page talks to a <strong>Cobalt</strong> API instance (open-source media downloader). No accounts, no tracking on this page.</li>
         <li><strong>YouTube</strong>, Shorts, Music · TikTok · Instagram · X/Twitter · Reddit · SoundCloud · Vimeo · Twitch clips · and more depending on the instance.</li>
         <li><strong>Spotify:</strong> Cobalt does not pull Spotify streams directly (DRM). Use a track share link if the instance maps it, or paste the matching YouTube / SoundCloud link instead. For bulk Spotify → files, use desktop tools like <code>spotDL</code> (YouTube matching) on your machine.</li>
-        <li>Official <code>api.cobalt.tools</code> often has Turnstile / rate limits and may disable YouTube. Prefer a community instance from the dropdown, or run your own (Docker, see cobalt GitHub).</li>
+        <li>Most public instances require Cloudflare Turnstile (JWT). This page can’t solve captchas. Use the ★ instances first (<code>xenon</code>, <code>cjs.nz</code>) — they accept bare POSTs. Others will return <code>error.api.auth.jwt.missing</code>.</li>
+        <li>Official <code>api.cobalt.tools</code> is locked down. Prefer ★ or run your own (Docker, cobalt GitHub).</li>
         <li>Response is a short-lived tunnel URL — click Download quickly. Nothing is stored on this page except recent URLs in localStorage.</li>
         <li>Pure frontend. Open the HTML file locally or host it anywhere. Change instance anytime.</li>
       </ul>
@@ -519,6 +522,80 @@
       });
     }
 
+    const OPEN_FALLBACKS = [
+      "https://rue-cobalt.xenon.zone",
+      "https://cobaltapi.cjs.nz",
+    ];
+
+    async function postCobalt(base, body) {
+      const res = await fetch(base + "/", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Instance returned non-JSON (HTTP " + res.status + ")");
+      }
+      return { res, data };
+    }
+
+    function handlePayload(data, url) {
+      if (data.status === "error") {
+        const code = data.error?.code || data.text || data.error || "Unknown error";
+        const codeStr = String(code);
+        const err = new Error(codeStr);
+        err.auth = /auth\.jwt\.missing|auth\.turnstile|auth\.key/i.test(codeStr);
+        throw err;
+      }
+
+      if (data.status === "tunnel" || data.status === "redirect") {
+        setStatus("ok", "Got tunnel — click Download.");
+        showResult(data.url, data.filename || "", "Expires soon · open once");
+        saveHist(url);
+        return true;
+      }
+      if (data.status === "picker") {
+        setStatus("info", "Multiple items — using first.");
+        console.log("picker", data);
+        const item = data.picker && data.picker[0];
+        if (item && item.url) {
+          showResult(item.url, item.filename || "", "First picker item");
+          saveHist(url);
+          return true;
+        }
+        if (data.url) {
+          showResult(data.url, data.filename || "");
+          saveHist(url);
+          return true;
+        }
+        setStatus("warn", "Picker — see console.");
+        return false;
+      }
+      if (data.status === "local-processing") {
+        setStatus(
+          "warn",
+          "Instance wants local processing. Try another instance or cobalt.tools frontend."
+        );
+        console.log(data);
+        return false;
+      }
+      setStatus("info", "Status: " + (data.status || "unknown"));
+      console.log(data);
+      if (data.url) {
+        showResult(data.url, data.filename || "");
+        saveHist(url);
+        return true;
+      }
+      return false;
+    }
+
     async function run() {
       const url = $("url").value.trim();
       if (!url) {
@@ -552,77 +629,54 @@
         filenameStyle: $("fname").value,
       };
 
+      const tried = new Set();
+      const queue = [base, ...OPEN_FALLBACKS.filter((u) => u !== base)];
+
       try {
-        const res = await fetch(base + "/", {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        });
-
-        const text = await res.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error("Instance returned non-JSON (status " + res.status + "). Try another instance.");
-        }
-
-        if (!res.ok) {
-          const msg = data.error?.code || data.text || data.error || "HTTP " + res.status;
-          throw new Error(String(msg));
-        }
-
-        if (data.status === "error") {
-          throw new Error(data.error?.code || data.text || "Unknown error");
-        }
-
-        if (data.status === "tunnel" || data.status === "redirect") {
-          const fileUrl = data.url;
-          const name = data.filename || "";
-          setStatus("ok", "Got tunnel — download starts when you click.");
-          showResult(fileUrl, name, "Expires soon · open link once");
-          saveHist(url);
-          // optional auto-nav (some browsers block)
-          // window.location.href = fileUrl;
-        } else if (data.status === "picker") {
-          setStatus(
-            "info",
-            "Multiple items — pick one. Opening first tunnel if present, else check picker response in console."
-          );
-          console.log("picker", data);
-          if (data.picker && data.picker[0] && data.picker[0].url) {
-            showResult(data.picker[0].url, data.picker[0].filename || "", "First picker item");
-            saveHist(url);
-          } else if (data.url) {
-            showResult(data.url, data.filename || "");
-            saveHist(url);
-          } else {
-            setStatus("warn", "Picker response — open DevTools console for full list.");
+        let lastErr = null;
+        for (const endpoint of queue) {
+          if (tried.has(endpoint)) continue;
+          tried.add(endpoint);
+          try {
+            setStatus(
+              "info",
+              '<span class="spinner"></span>' +
+                (tried.size > 1 ? "Fallback → " : "") +
+                endpoint.replace(/^https:\/\//, "")
+            );
+            const { res, data } = await postCobalt(endpoint, body);
+            if (!res.ok && data.status !== "error") {
+              throw new Error(data.error?.code || data.text || "HTTP " + res.status);
+            }
+            handlePayload(data, url);
+            if ($("instance").value !== "custom" && endpoint !== base) {
+              // keep UI selection; just note fallback worked
+            }
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e;
+            if (!e.auth && !/auth\.jwt|auth\.turnstile|auth\.key|Failed to fetch|CORS|NetworkError/i.test(e.message || "")) {
+              // hard failure — don't keep trying
+              break;
+            }
+            // auth / network → try next open instance
           }
-        } else if (data.status === "local-processing") {
-          setStatus(
-            "warn",
-            "Instance wants local processing (browser-side merge). This simple page doesn't run that — try another instance or use cobalt.tools frontend."
-          );
-          console.log(data);
-        } else {
-          setStatus("info", "Status: " + (data.status || "unknown") + " — check console.");
-          console.log(data);
-          if (data.url) {
-            showResult(data.url, data.filename || "");
-            saveHist(url);
+        }
+        if (lastErr) {
+          let msg = lastErr.message || String(lastErr);
+          if (/auth\.jwt|auth\.turnstile/i.test(msg)) {
+            msg =
+              msg +
+              " — needs captcha. Use a ★ instance (xenon / cjs.nz) or self-host.";
+          } else if (/Failed to fetch|NetworkError|CORS/i.test(msg)) {
+            msg =
+              "Network/CORS blocked. Try xenon or cjs.nz, or host this HTML next to your own Cobalt.";
           }
+          setStatus("err", msg);
         }
       } catch (err) {
-        let msg = err.message || String(err);
-        if (/Failed to fetch|NetworkError|CORS/i.test(msg)) {
-          msg =
-            "Network/CORS blocked. Official API often refuses browser origins. Pick a community instance, or host this page on the same origin as a self-hosted Cobalt.";
-        }
-        setStatus("err", msg);
+        setStatus("err", err.message || String(err));
       } finally {
         $("go").disabled = false;
       }
