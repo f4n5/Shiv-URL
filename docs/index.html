@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Media DL — paste link, get file</title>
+  <style>
+    :root {
+      --bg: #0c0c0e;
+      --surface: #141418;
+      --surface2: #1c1c22;
+      --border: #2a2a32;
+      --text: #e8e8ed;
+      --muted: #8b8b96;
+      --accent: #7c6af5;
+      --accent2: #a78bfa;
+      --green: #34d399;
+      --red: #f87171;
+      --orange: #fb923c;
+      --radius: 12px;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 106, 245, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 100%, rgba(167, 139, 250, 0.06), transparent);
+    }
+    .wrap {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      font-size: 1.65rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+    header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.35rem;
+      margin-bottom: 1rem;
+    }
+    .input-row {
+      display: flex;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+    .input-row input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      color: var(--text);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input-row input:focus {
+      border-color: var(--accent);
+    }
+    .input-row input::placeholder {
+      color: var(--muted);
+    }
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.85rem 1.2rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover { opacity: 0.92; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-ghost:hover {
+      border-color: var(--muted);
+      opacity: 1;
+    }
+    .opts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    @media (max-width: 520px) {
+      .opts { grid-template-columns: 1fr; }
+      .input-row { flex-direction: column; }
+    }
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .field select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .field select:focus { border-color: var(--accent); }
+    .mode-row {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .mode-btn {
+      flex: 1;
+      min-width: 90px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.75rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-btn.active {
+      background: rgba(124, 106, 245, 0.18);
+      border-color: var(--accent);
+      color: var(--accent2);
+    }
+    .status {
+      margin-top: 1rem;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.info {
+      background: rgba(124, 106, 245, 0.12);
+      border: 1px solid rgba(124, 106, 245, 0.3);
+      color: var(--accent2);
+    }
+    .status.ok {
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: var(--green);
+    }
+    .status.err {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--red);
+    }
+    .status.warn {
+      background: rgba(251, 146, 60, 0.1);
+      border: 1px solid rgba(251, 146, 60, 0.3);
+      color: var(--orange);
+    }
+    .result {
+      margin-top: 1rem;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result a.dl {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--green);
+      color: #0c0c0e;
+      text-decoration: none;
+      font-weight: 650;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      margin-top: 0.5rem;
+    }
+    .result a.dl:hover { opacity: 0.9; }
+    .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+      word-break: break-all;
+    }
+    .instance-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .instance-bar select {
+      flex: 1;
+      min-width: 180px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.65rem;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .chip {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .chip.live { color: var(--green); border-color: rgba(52, 211, 153, 0.4); }
+    details.help {
+      margin-top: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.9rem 1.1rem;
+    }
+    details.help summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.9rem;
+      list-style: none;
+    }
+    details.help summary::-webkit-details-marker { display: none; }
+    details.help[open] summary { margin-bottom: 0.75rem; color: var(--text); }
+    details.help ul {
+      padding-left: 1.2rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    details.help li { margin-bottom: 0.35rem; }
+    details.help code {
+      background: var(--surface2);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--accent2); text-decoration: none; }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: -2px;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .history {
+      margin-top: 1.25rem;
+    }
+    .history h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    .hist-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .hist-item:last-child { border-bottom: none; }
+    .hist-item span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+    .hist-item button {
+      background: none;
+      border: none;
+      color: var(--accent2);
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 0.2rem 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Media DL</h1>
+      <p>Paste a YouTube / TikTok / SoundCloud / X / Reddit link → get mp3 or mp4</p>
+    </header>
+
+    <div class="card">
+      <div class="instance-bar">
+        <select id="instance" title="Cobalt API instance">
+          <option value="https://api.cobalt.tools">api.cobalt.tools (official)</option>
+          <option value="https://bergung-api.hoffnungfuerdiezukunft.net">bergung (community)</option>
+          <option value="https://cobalt-alpha.wolfy.love">canine alpha</option>
+          <option value="https://apicobalt.girlskissing.top">girlskissing</option>
+          <option value="https://nuko-c.meowing.de">meowing nuko</option>
+          <option value="https://cobalt-api.lamps-dev.dev">lamps-dev</option>
+          <option value="custom">Custom instance…</option>
+        </select>
+        <span class="chip" id="instChip">instance</span>
+      </div>
+      <div id="customRow" style="display:none; margin-bottom:0.75rem">
+        <input id="customApi" type="url" placeholder="https://your-cobalt-api.example" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.65rem 0.75rem;color:var(--text);font-size:0.9rem" />
+      </div>
+
+      <div class="input-row">
+        <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=…  or any supported link" autocomplete="off" spellcheck="false" />
+        <button class="btn" id="go" type="button">Download</button>
+      </div>
+
+      <div class="mode-row">
+        <button type="button" class="mode-btn active" data-mode="auto">Auto</button>
+        <button type="button" class="mode-btn" data-mode="audio">Audio only</button>
+        <button type="button" class="mode-btn" data-mode="mute">Video muted</button>
+      </div>
+
+      <div class="opts">
+        <div class="field">
+          <label>Video quality</label>
+          <select id="quality">
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+            <option value="360">360p</option>
+            <option value="max">Max</option>
+            <option value="2160">4K</option>
+            <option value="1440">1440p</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Audio format</label>
+          <select id="audioFmt">
+            <option value="mp3">MP3</option>
+            <option value="best">Best</option>
+            <option value="ogg">OGG</option>
+            <option value="opus">Opus</option>
+            <option value="wav">WAV</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Audio bitrate</label>
+          <select id="bitrate">
+            <option value="128">128 kbps</option>
+            <option value="192">192 kbps</option>
+            <option value="256">256 kbps</option>
+            <option value="320">320 kbps</option>
+            <option value="96">96 kbps</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Filename style</label>
+          <select id="fname">
+            <option value="pretty">Pretty</option>
+            <option value="basic">Basic</option>
+            <option value="classic">Classic</option>
+            <option value="nerdy">Nerdy</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="status" id="status"></div>
+      <div class="result" id="result">
+        <div id="resultMsg"></div>
+        <a class="dl" id="dlLink" href="#" target="_blank" rel="noopener">Download file</a>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+
+    <div class="card history" id="histCard" style="display:none">
+      <h3>Recent</h3>
+      <div id="histList"></div>
+    </div>
+
+    <details class="help">
+      <summary>How this works · supported · Spotify note</summary>
+      <ul>
+        <li>This page talks to a <strong>Cobalt</strong> API instance (open-source media downloader). No accounts, no tracking on this page.</li>
+        <li><strong>YouTube</strong>, Shorts, Music · TikTok · Instagram · X/Twitter · Reddit · SoundCloud · Vimeo · Twitch clips · and more depending on the instance.</li>
+        <li><strong>Spotify:</strong> Cobalt does not pull Spotify streams directly (DRM). Use a track share link if the instance maps it, or paste the matching YouTube / SoundCloud link instead. For bulk Spotify → files, use desktop tools like <code>spotDL</code> (YouTube matching) on your machine.</li>
+        <li>Official <code>api.cobalt.tools</code> often has Turnstile / rate limits and may disable YouTube. Prefer a community instance from the dropdown, or run your own (Docker, see cobalt GitHub).</li>
+        <li>Response is a short-lived tunnel URL — click Download quickly. Nothing is stored on this page except recent URLs in localStorage.</li>
+        <li>Pure frontend. Open the HTML file locally or host it anywhere. Change instance anytime.</li>
+      </ul>
+    </details>
+
+    <footer>
+      Powered by community <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener">Cobalt</a> instances ·
+      <a href="https://cobalt.directory/" target="_blank" rel="noopener">instance list</a>
+    </footer>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let mode = "auto";
+    const HIST_KEY = "media-dl-hist";
+    const MAX_HIST = 8;
+
+    document.querySelectorAll(".mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        mode = btn.dataset.mode;
+      });
+    });
+
+    $("instance").addEventListener("change", () => {
+      const v = $("instance").value;
+      $("customRow").style.display = v === "custom" ? "block" : "none";
+      $("instChip").textContent = v === "custom" ? "custom" : "ready";
+      $("instChip").classList.toggle("live", v !== "custom");
+    });
+
+    function apiBase() {
+      const v = $("instance").value;
+      if (v === "custom") {
+        let u = $("customApi").value.trim().replace(/\/$/, "");
+        if (!u) throw new Error("Enter a custom API URL");
+        return u;
+      }
+      return v.replace(/\/$/, "");
+    }
+
+    function setStatus(type, html) {
+      const el = $("status");
+      el.className = "status show " + type;
+      el.innerHTML = html;
+    }
+
+    function hideStatus() {
+      $("status").className = "status";
+      $("status").innerHTML = "";
+    }
+
+    function showResult(url, filename, extra) {
+      $("result").classList.add("show");
+      $("resultMsg").textContent = filename ? "Ready: " + filename : "Ready";
+      $("dlLink").href = url;
+      $("dlLink").download = filename || "";
+      $("meta").textContent = extra || url;
+    }
+
+    function hideResult() {
+      $("result").classList.remove("show");
+    }
+
+    function loadHist() {
+      try {
+        return JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
+      } catch {
+        return [];
+      }
+    }
+
+    function saveHist(url) {
+      let list = loadHist().filter((u) => u !== url);
+      list.unshift(url);
+      list = list.slice(0, MAX_HIST);
+      localStorage.setItem(HIST_KEY, JSON.stringify(list));
+      renderHist();
+    }
+
+    function renderHist() {
+      const list = loadHist();
+      if (!list.length) {
+        $("histCard").style.display = "none";
+        return;
+      }
+      $("histCard").style.display = "block";
+      $("histList").innerHTML = list
+        .map(
+          (u) =>
+            `<div class="hist-item"><span title="${u.replace(/"/g, "&quot;")}">${u}</span><button type="button" data-u="${u.replace(/"/g, "&quot;")}">Use</button></div>`
+        )
+        .join("");
+      $("histList").querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => {
+          $("url").value = b.dataset.u;
+        });
+      });
+    }
+
+    async function run() {
+      const url = $("url").value.trim();
+      if (!url) {
+        setStatus("warn", "Paste a link first.");
+        return;
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        setStatus("warn", "URL needs http:// or https://");
+        return;
+      }
+
+      hideResult();
+      $("go").disabled = true;
+      setStatus("info", '<span class="spinner"></span>Talking to instance…');
+
+      let base;
+      try {
+        base = apiBase();
+      } catch (e) {
+        setStatus("err", e.message);
+        $("go").disabled = false;
+        return;
+      }
+
+      const body = {
+        url,
+        downloadMode: mode,
+        videoQuality: $("quality").value,
+        audioFormat: $("audioFmt").value,
+        audioBitrate: $("bitrate").value,
+        filenameStyle: $("fname").value,
+      };
+
+      try {
+        const res = await fetch(base + "/", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error("Instance returned non-JSON (status " + res.status + "). Try another instance.");
+        }
+
+        if (!res.ok) {
+          const msg = data.error?.code || data.text || data.error || "HTTP " + res.status;
+          throw new Error(String(msg));
+        }
+
+        if (data.status === "error") {
+          throw new Error(data.error?.code || data.text || "Unknown error");
+        }
+
+        if (data.status === "tunnel" || data.status === "redirect") {
+          const fileUrl = data.url;
+          const name = data.filename || "";
+          setStatus("ok", "Got tunnel — download starts when you click.");
+          showResult(fileUrl, name, "Expires soon · open link once");
+          saveHist(url);
+          // optional auto-nav (some browsers block)
+          // window.location.href = fileUrl;
+        } else if (data.status === "picker") {
+          setStatus(
+            "info",
+            "Multiple items — pick one. Opening first tunnel if present, else check picker response in console."
+          );
+          console.log("picker", data);
+          if (data.picker && data.picker[0] && data.picker[0].url) {
+            showResult(data.picker[0].url, data.picker[0].filename || "", "First picker item");
+            saveHist(url);
+          } else if (data.url) {
+            showResult(data.url, data.filename || "");
+            saveHist(url);
+          } else {
+            setStatus("warn", "Picker response — open DevTools console for full list.");
+          }
+        } else if (data.status === "local-processing") {
+          setStatus(
+            "warn",
+            "Instance wants local processing (browser-side merge). This simple page doesn't run that — try another instance or use cobalt.tools frontend."
+          );
+          console.log(data);
+        } else {
+          setStatus("info", "Status: " + (data.status || "unknown") + " — check console.");
+          console.log(data);
+          if (data.url) {
+            showResult(data.url, data.filename || "");
+            saveHist(url);
+          }
+        }
+      } catch (err) {
+        let msg = err.message || String(err);
+        if (/Failed to fetch|NetworkError|CORS/i.test(msg)) {
+          msg =
+            "Network/CORS blocked. Official API often refuses browser origins. Pick a community instance, or host this page on the same origin as a self-hosted Cobalt.";
+        }
+        setStatus("err", msg);
+      } finally {
+        $("go").disabled = false;
+      }
+    }
+
+    $("go").addEventListener("click", run);
+    $("url").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") run();
+    });
+
+    // paste helper
+    document.addEventListener("paste", (e) => {
+      if (document.activeElement === $("url")) return;
+      const t = (e.clipboardData || window.clipboardData).getData("text");
+      if (t && /^https?:\/\//i.test(t.trim())) {
+        $("url").value = t.trim();
+      }
+    });
+
+    renderHist();
+    $("instChip").textContent = "ready";
+    $("instChip").classList.add("live");
+  </script>
+</body>
+</html>
