@@ -329,8 +329,8 @@
     <div class="card">
       <div class="instance-bar">
         <select id="instance" title="Cobalt API instance">
-          <option value="https://rue-cobalt.xenon.zone">xenon (no captcha) ★</option>
-          <option value="https://cobaltapi.cjs.nz">cjs.nz (no captcha) ★</option>
+          <option value="https://cobaltapi.cjs.nz">cjs.nz (open) ★</option>
+          <option value="https://rue-cobalt.xenon.zone">xenon (open, flaky)</option>
           <option value="https://cobalt-alpha.wolfy.love">canine alpha</option>
           <option value="https://apicobalt.girlskissing.top">girlskissing</option>
           <option value="https://nuko-c.meowing.de">meowing nuko</option>
@@ -348,6 +348,7 @@
       <div class="input-row">
         <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=…  or any supported link" autocomplete="off" spellcheck="false" />
         <button class="btn" id="go" type="button">Download</button>
+        <button class="btn btn-ghost" id="openFront" type="button" title="Open on community frontend">Frontend</button>
       </div>
 
       <div class="mode-row">
@@ -419,8 +420,9 @@
         <li>This page talks to a <strong>Cobalt</strong> API instance (open-source media downloader). No accounts, no tracking on this page.</li>
         <li><strong>YouTube</strong>, Shorts, Music · TikTok · Instagram · X/Twitter · Reddit · SoundCloud · Vimeo · Twitch clips · and more depending on the instance.</li>
         <li><strong>Spotify:</strong> Cobalt does not pull Spotify streams directly (DRM). Use a track share link if the instance maps it, or paste the matching YouTube / SoundCloud link instead. For bulk Spotify → files, use desktop tools like <code>spotDL</code> (YouTube matching) on your machine.</li>
-        <li>Most public instances require Cloudflare Turnstile (JWT). This page can’t solve captchas. Use the ★ instances first (<code>xenon</code>, <code>cjs.nz</code>) — they accept bare POSTs. Others will return <code>error.api.auth.jwt.missing</code>.</li>
-        <li>Official <code>api.cobalt.tools</code> is locked down. Prefer ★ or run your own (Docker, cobalt GitHub).</li>
+        <li>Most public instances require Cloudflare Turnstile (JWT). This page can’t solve captchas. Use <code>cjs.nz</code> first when it works.</li>
+        <li><code>error.api.youtube.login</code> = the API has no YouTube session cookies. Community frontends (cobalt.tools / girlskissing / canine) often still work because they pair captcha + cookie pools. Open the link there if pure API fails.</li>
+        <li>Best long-term: self-host Cobalt with your own <code>cookies.json</code> (logged-in YouTube cookies). Docker one-liner on the Cobalt GitHub.</li>
         <li>Response is a short-lived tunnel URL — click Download quickly. Nothing is stored on this page except recent URLs in localStorage.</li>
         <li>Pure frontend. Open the HTML file locally or host it anywhere. Change instance anytime.</li>
       </ul>
@@ -478,8 +480,37 @@
       $("result").classList.add("show");
       $("resultMsg").textContent = filename ? "Ready: " + filename : "Ready";
       $("dlLink").href = url;
-      $("dlLink").download = filename || "";
+      $("dlLink").download = filename || "download";
+      $("dlLink").dataset.filename = filename || "download";
+      $("dlLink").dataset.tunnel = url;
       $("meta").textContent = extra || url;
+    }
+
+    async function saveTunnel(e) {
+      const a = $("dlLink");
+      const tunnel = a.dataset.tunnel || a.href;
+      const name = a.dataset.filename || "download.mp3";
+      if (!tunnel || tunnel === "#") return;
+      e.preventDefault();
+      setStatus("info", '<span class="spinner"></span>Fetching file…');
+      try {
+        const r = await fetch(tunnel, { mode: "cors" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const blob = await r.blob();
+        if (!blob.size) throw new Error("Empty file (0 bytes) — instance tunnel died. Switch instance and retry.");
+        const obj = URL.createObjectURL(blob);
+        const tmp = document.createElement("a");
+        tmp.href = obj;
+        tmp.download = name;
+        document.body.appendChild(tmp);
+        tmp.click();
+        tmp.remove();
+        setTimeout(() => URL.revokeObjectURL(obj), 4000);
+        setStatus("ok", "Saved " + name + " (" + Math.round(blob.size / 1024) + " KB)");
+      } catch (err) {
+        setStatus("err", (err.message || String(err)) + " — opening tunnel in new tab as fallback");
+        window.open(tunnel, "_blank");
+      }
     }
 
     function hideResult() {
@@ -523,8 +554,8 @@
     }
 
     const OPEN_FALLBACKS = [
-      "https://rue-cobalt.xenon.zone",
       "https://cobaltapi.cjs.nz",
+      "https://rue-cobalt.xenon.zone",
     ];
 
     async function postCobalt(base, body) {
@@ -550,8 +581,27 @@
       if (data.status === "error") {
         const code = data.error?.code || data.text || data.error || "Unknown error";
         const codeStr = String(code);
-        const err = new Error(codeStr);
+        const tips = {
+          "error.api.youtube.login": "YouTube wants cookies on this instance (age/region/bot check). Try another instance, or open the same link on cobalt.tools in a normal browser tab.",
+          "error.api.youtube.age": "Age-restricted. Instance needs logged-in cookies.",
+          "error.api.youtube.region": "Region blocked on this instance.",
+          "error.api.youtube.fetch": "YouTube fetch failed on this instance — try another ★ / open instance.",
+          "error.api.service.unsupported": "This link type is not supported by Cobalt.",
+          "error.api.service.disabled": "Service disabled on this instance. Switch instance.",
+        };
+        let msg = codeStr;
+        for (const k of Object.keys(tips)) {
+          if (codeStr.includes(k) || codeStr === k.replace("error.api.", "")) {
+            msg = codeStr + " — " + tips[k];
+            break;
+          }
+        }
+        if (/youtube\.login/i.test(codeStr)) {
+          msg = codeStr + " — " + tips["error.api.youtube.login"];
+        }
+        const err = new Error(msg);
         err.auth = /auth\.jwt\.missing|auth\.turnstile|auth\.key/i.test(codeStr);
+        err.youtubeLogin = /youtube\.login/i.test(codeStr);
         throw err;
       }
 
@@ -668,10 +718,13 @@
           if (/auth\.jwt|auth\.turnstile/i.test(msg)) {
             msg =
               msg +
-              " — needs captcha. Use a ★ instance (xenon / cjs.nz) or self-host.";
+              " — needs captcha. Use cjs.nz (open) or self-host.";
+          } else if (/youtube\.login/i.test(msg)) {
+            msg =
+              "error.api.youtube.login — this instance has no YouTube cookies. Open the same link on https://cobalt.tools (or another community frontend) in a normal browser — those solve captcha + use cookie pools. Pure API instances often hit this.";
           } else if (/Failed to fetch|NetworkError|CORS/i.test(msg)) {
             msg =
-              "Network/CORS blocked. Try xenon or cjs.nz, or host this HTML next to your own Cobalt.";
+              "Network/CORS blocked. Try cjs.nz, or host this HTML next to your own Cobalt.";
           }
           setStatus("err", msg);
         }
@@ -683,6 +736,19 @@
     }
 
     $("go").addEventListener("click", run);
+    $("dlLink").addEventListener("click", saveTunnel);
+    $("openFront").addEventListener("click", () => {
+      const u = $("url").value.trim();
+      if (!u) { setStatus("warn", "Paste a link first."); return; }
+      // cobalt frontends read ?u= or just paste; open main sites
+      const targets = [
+        "https://cobalt.tools/",
+        "https://cobalt.girlskissing.top/",
+        "https://cobalt.canine.tools/",
+      ];
+      window.open(targets[0], "_blank");
+      setStatus("info", "Opened cobalt.tools — paste the same URL there. Frontends handle captcha + cookie pools.");
+    });
     $("url").addEventListener("keydown", (e) => {
       if (e.key === "Enter") run();
     });
